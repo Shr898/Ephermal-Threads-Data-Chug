@@ -1,5 +1,0 @@
-spacy
-networkx
-matplotlib.pyplot
-community.community_louvain
-pyvis.network
