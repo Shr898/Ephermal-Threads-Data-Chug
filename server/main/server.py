@@ -26,6 +26,5 @@ def get_network():
 
 
 
-if __name__ == '__main__':  
-   app.run() 
+
 
