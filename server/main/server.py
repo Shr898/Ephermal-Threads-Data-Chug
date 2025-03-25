@@ -18,9 +18,20 @@ app = Flask(__name__)
 def get_network():
     if request.method == 'POST':
 
-# Return a error 400 indicating bad request. The user must input a text file
+        #  Return a error 400 indicating bad request. And the user must input a text file
         if 'file' not in request.files:
             abort(400, description = "Please input a text file.")
+        
+        #  Get the name of the uploaded file.
+        fileName = request.files['file'].filename
+
+        #  Check if the file extension is .txt. If not then return an error.
+        if not fileName.endswith('.txt'):
+            abort(400, description = "Please upload a .txt file.")
+        
+        #  Else if the text file exists.
+        else:
+            
 
     return
 
