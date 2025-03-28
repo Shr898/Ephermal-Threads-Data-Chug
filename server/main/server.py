@@ -1,3 +1,4 @@
+import spacy
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -31,6 +32,21 @@ def get_network():
         
         #  Else if the text file exists.
         else:
+            Text_File = request.files['file'] 
+            book = Text_File.read().decode("utf-8")
+            processed_book = nlp(book)
+
+            #  Creating a list containing dictionary objects with "sentence" and "entities" key-value pairs.
+            sentence_entity_df = []
+            for sentence in processed_book.sents:
+                entities_list = [entity.text for entity in sentence.ents if entity.label_ == "PERSON"]
+                sentence_entity_df.append({"sentence" : sentence , "entities" : entities_list})
+
+            sentence_entity_df = pd.dataframe(sentence_entity_df)
+
+            #  Creating a sentence and entities JSON
+
+            
             
 
     return
