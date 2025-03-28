@@ -36,7 +36,7 @@ def get_network():
             book = Text_File.read().decode("utf-8")
             processed_book = nlp(book)
 
-            #  Creating a list containing dictionary objects with "sentence" and "entities" key-value pairs.
+            #  Creating a list containing python dictionary objects with "sentence" and "entities" key-value pairs.
             sentence_entity_df = []
             for sentence in processed_book.sents:
                 entities_list = [entity.text for entity in sentence.ents if entity.label_ == "PERSON"]
