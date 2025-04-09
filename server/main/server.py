@@ -26,7 +26,7 @@ def analyze_text():
     text_content = uploaded_file.read().decode("utf-8")
     processed_text = nlp(text_content)
 
-    # Extract human names from each sentence
+    # Extract human names from each sentence.
     sentence_entity = []
     for sentence in processed_text.sents:
         person_names = [entity.text for entity in sentence.ents if entity.label_ == "PERSON"]
