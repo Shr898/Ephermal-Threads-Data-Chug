@@ -1,32 +1,55 @@
 import os
 import json
 import spacy
+import logging  
 import numpy as np
 import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 from pyvis.network import Network
-from flask import Flask, request, send_file, jsonify
 import community.community_louvain as community
+from flask import Flask, request, send_file, jsonify
+from flask_cors import CORS
 
 
-# Create a flask app object.
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+)
+
+
+# Create a Flask app object
 app = Flask(__name__)
+CORS(app)
 
-# Create a nlp medium size model object.
-nlp = spacy.load("en_core_web_md")  
 
-# Create an endpoint the will recieve and trigger analysis code.
+# Base directory of this file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# Load spaCy model
+nlp = spacy.load("en_core_web_md")
+
+
+# Flask app endpoint /analyze
+# It serves the url to graph and json
 @app.route('/analyze', methods=['POST'])
 def analyze_text():
     uploaded_file = request.files.get('file')
     if not uploaded_file or not uploaded_file.filename.endswith('.txt'):
+        logging.warning("Invalid or missing file in request.")
         return jsonify({"error": "Please upload a valid '.txt' file"}), 400
 
-    text_content = uploaded_file.read().decode("utf-8")
-    processed_text = nlp(text_content)
+    logging.info(f"Received file: {uploaded_file.filename}")
 
-    # Extract human names from each sentence.
+    text_content = uploaded_file.read().decode("utf-8")
+    logging.info("Text file read and decoded.")
+
+    processed_text = nlp(text_content)
+    logging.info("Text processed with spaCy model.")
+
+    # Extract human names from each sentence
     sentence_entity = []
     for sentence in processed_text.sents:
         person_names = [entity.text for entity in sentence.ents if entity.label_ == "PERSON"]
@@ -35,10 +58,15 @@ def analyze_text():
             "characters": person_names
         })
 
-    # Save sentence-entity JSON
-    json_filename = "sentence_entities.json"
+    logging.info(f"Extracted {len(sentence_entity)} sentences with named entities.")
+
+    # Create a path object.
+    # The json files path will be saved here.
+    json_filename = os.path.join(BASE_DIR, "sentence_entities.json")
     with open(json_filename, "w", encoding="utf-8") as json_file:
         json.dump(sentence_entity, json_file, indent=2)
+
+    logging.info(f"Saved named entities to {json_filename}")
 
     # Build character relationship graph
     sentence_dataframe = pd.DataFrame(sentence_entity)
@@ -57,6 +85,8 @@ def analyze_text():
                     "target": unique_characters[i + 1]
                 })
 
+    logging.info(f"Extracted {len(character_relations)} character relationships.")
+
     relations_dataframe = pd.DataFrame(character_relations)
     sorted_relations = pd.DataFrame(
         np.sort(relations_dataframe.values, axis=1),
@@ -65,7 +95,6 @@ def analyze_text():
     sorted_relations['weight'] = 1
     grouped_relations = sorted_relations.groupby(["source", "target"], sort=False, as_index=False).sum()
 
-    # Create the network graph
     character_graph = nx.from_pandas_edgelist(
         grouped_relations,
         source="source",
@@ -74,13 +103,13 @@ def analyze_text():
         create_using=nx.Graph()
     )
 
-    # Add node size and community group
     node_sizes = dict(character_graph.degree)
-    communities = community_louvain.best_partition(character_graph)
+    communities = community.best_partition(character_graph)
     nx.set_node_attributes(character_graph, node_sizes, 'size')
     nx.set_node_attributes(character_graph, communities, 'group')
 
-    # Generate the HTML visualization using PyVis
+    logging.info(f"Graph generated with {len(character_graph.nodes)} nodes and {len(character_graph.edges)} edges.")
+
     network_visualization = Network(
         notebook=False,
         width="1000px",
@@ -89,21 +118,39 @@ def analyze_text():
         font_color="white"
     )
     network_visualization.from_nx(character_graph)
-    html_filename = "network.html"
+
+
+    # Create a path object.
+    # It stores the path to the html file.
+    html_filename = os.path.join(BASE_DIR, "network.html")
     network_visualization.save_graph(html_filename)
 
+    logging.info(f"Saved network graph to {html_filename}")
+
+
+    # Return the url of json and graph.
+    # This will return the html file as well as the json file.
     return jsonify({
         "json_file": "/download/json",
         "graph_file": "/download/graph"
     })
 
+
+# This endpoint serves json file.
+# It will return the json file as it is.
 @app.route('/download/json', methods=['GET'])
 def download_json():
-    return send_file("sentence_entities.json", as_attachment=True)
+    return send_file(os.path.join(BASE_DIR, "sentence_entities.json"), mimetype = "application/json")
 
+
+# This endpoint serves network/graph file.
+# It will return the .html file as it is
 @app.route('/download/graph', methods=['GET'])
 def download_graph():
-    return send_file("network.html", as_attachment=True)
+    return send_file(os.path.join(BASE_DIR, "network.html"), mimetype = "text/html")
 
+
+# One of the most important code block.
+# It seves to debug and also run specific commands.
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')
