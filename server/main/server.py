@@ -8,7 +8,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from pyvis.network import Network
 import community.community_louvain as community
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, abort
 from flask_cors import CORS
 
 
@@ -24,15 +24,15 @@ app = Flask(__name__)
 CORS(app)
 
 
-# Base directory of this file
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Directory of <user> will store all the JSON and .html
+BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user")
 
 
 # Load spaCy model
 nlp = spacy.load("en_core_web_md")
 
 
-# Flask app endpoint /analyze
+# Flask app endpoint </analyze>
 # It serves the url to graph and json
 @app.route('/analyze', methods=['POST'])
 def analyze_text():
@@ -92,9 +92,24 @@ def analyze_text():
         np.sort(relations_dataframe.values, axis=1),
         columns=["source", "target"]
     )
+
+
+    # Create a weight dataframe that stores weight as a column.
+    # Performs a Group By Sum() aggregation to count the occurences of a { "source": "target" } Group.
     sorted_relations['weight'] = 1
     grouped_relations = sorted_relations.groupby(["source", "target"], sort=False, as_index=False).sum()
 
+
+    # Create a path object.
+    # The weights will be stored in this <weights.json> file.
+    weights_filename = os.path.join(BASE_DIR, "weights.json")
+    with open(weights_filename, "w", encoding="utf-8") as file:
+        json.dump(grouped_relations.to_dict(orient="records"), file, indent=2)
+
+    logging.info(f"Saved named weights to {weights_filename}")
+
+
+    # Create a { "source": "target" } undirected graph object.
     character_graph = nx.from_pandas_edgelist(
         grouped_relations,
         source="source",
@@ -108,6 +123,14 @@ def analyze_text():
     nx.set_node_attributes(character_graph, node_sizes, 'size')
     nx.set_node_attributes(character_graph, communities, 'group')
 
+
+    # Create a path object.
+    # Store the degrees into <degrees.json> file.
+    degrees_filename= os.path.join(BASE_DIR, "degrees.json")
+    with open(degrees_filename, "w", encoding="utf-8") as file:
+        json.dump(node_sizes, file, indent=2)
+
+    logging.info(f"SAVED DEGREES JSON TO {degrees_filename}")
     logging.info(f"Graph generated with {len(character_graph.nodes)} nodes and {len(character_graph.edges)} edges.")
 
     network_visualization = Network(
@@ -136,6 +159,7 @@ def analyze_text():
     })
 
 
+# JSON
 # This endpoint serves json file.
 # It will return the json file as it is.
 @app.route('/download/json', methods=['GET'])
@@ -143,6 +167,33 @@ def download_json():
     return send_file(os.path.join(BASE_DIR, "sentence_entities.json"), mimetype = "application/json")
 
 
+# WEIGHTS
+# This endpoint will serve the relationship weights.
+# It will return a json with integer weights and 2 names constituting a relationship.
+@app.route('/download/relation_weights', methods=['GET'])
+def relation_weights():
+    weightsJSON= os.path.join(BASE_DIR, "weights.json")
+
+    if os.path.exists(weightsJSON):
+        return send_file(weightsJSON, mimetype= "application/json")
+
+    return jsonify({"error": "weights.json not found"}), 404
+
+
+# DEGREE
+# This endpoint will serve the degree of the individual nodes/entities.
+# A degree is a measure of well-connected a node is in a graph.
+@app.route('/download/degree', methods= ['GET'])
+def degree_Node():
+    degreesJSON= os.path.join(BASE_DIR, "degrees.json")
+
+    if os.path.exists(degreesJSON):
+        return send_file(degreesJSON, mimetype= "application/json")
+
+    return jsonify({"error": "degrees.json not found"}), 404
+
+
+# NETWORK
 # This endpoint serves network/graph file.
 # It will return the .html file as it is
 @app.route('/download/graph', methods=['GET'])
