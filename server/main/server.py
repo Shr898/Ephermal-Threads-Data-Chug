@@ -1,7 +1,8 @@
 import os
 import json
 import spacy
-import logging  
+import logging
+import requests  
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -198,8 +199,67 @@ def degree_Node():
 # It will return the .html file as it is
 @app.route('/download/graph', methods=['GET'])
 def download_graph():
+    html_path = os.path.join(BASE_DIR, "network.html")
+
+    if not os.path.exists(html_path):
+        return jsonify({"error": "network.html not found"}), 404
+
+    with open(html_path, "r", encoding= "utf-8") as f:
+        html= f.read()
+
+    custom_script= """
+        <script type="text/javascript">
+        setTimeout(function () {
+            if (typeof network !== "undefined") {
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                const nodeName = params.nodes[0];
+                window.parent.postMessage({ type: "NODE_CLICKED", nodeName }, "*");
+                }
+            });
+            }
+        }, 1000);
+        </script>
+        </body>
+    """
+
+    html= html.replace("</body>", custom_script)
+
+    with open(html_path, "w", encoding= "utf-8") as file:
+        file.write(html)
+
     return send_file(os.path.join(BASE_DIR, "network.html"), mimetype = "text/html")
 
+
+# SUMMARY
+# This endpoint will request summary flask app.
+# It will return a summary json
+@app.route("/download/summary", methods=['POST'])
+def getSummary():
+    request_data= request.get_json()
+    name= request_data.get("name")
+    if not name:
+        return jsonify({"error": "Missing a name in request."}), 400
+
+    json_path = os.path.join(BASE_DIR, "sentence_entities.json")
+    if not os.path.exists(json_path):
+        return jsonify({"error": "Sentences json doesnt exist."}), 404
+
+    with open(json_path, 'r') as file:
+        data= json.load(file)
+
+    sentences= [entry["sentence"] for entry in data if any(name.lower() in n.lower() for n in entry["characters"])]
+
+    if not sentences:
+        return jsonify({"error": f"No sentences found for name '{name}'"}), 404
+
+    files = {'file': ('summary.json', json.dumps(sentences), 'application/json')}
+    try:
+        response = requests.post("http://host.docker.internal:5000/summarize", files=files)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        logging.error(f"Failed to connect to summary service: {e}")
+        return jsonify({"error": "Failed to summarize text."}), 500
 
 # One of the most important code block.
 # It seves to debug and also run specific commands.

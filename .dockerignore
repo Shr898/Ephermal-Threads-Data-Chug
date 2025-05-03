@@ -1,5 +1,5 @@
 # Ignore Python cache and metadata
-__pycache__/
+server/main/__pycache__/
 *.pyc
 *.pyo
 *.pyd
