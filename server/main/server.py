@@ -6,8 +6,10 @@ import requests
 import numpy as np
 import pandas as pd
 import networkx as nx
+from dotenv import load_dotenv
 import matplotlib.pyplot as plt
 from pyvis.network import Network
+from google import genai  # Updated import
 import community.community_louvain as community
 from flask import Flask, request, send_file, jsonify, abort
 from flask_cors import CORS
@@ -18,6 +20,12 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Gemini client
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 # Create a Flask app object
@@ -160,12 +168,16 @@ def analyze_text():
     })
 
 
+
+
 # JSON
 # This endpoint serves json file.
 # It will return the json file as it is.
 @app.route('/download/json', methods=['GET'])
 def download_json():
     return send_file(os.path.join(BASE_DIR, "sentence_entities.json"), mimetype = "application/json")
+
+
 
 
 # WEIGHTS
@@ -181,6 +193,8 @@ def relation_weights():
     return jsonify({"error": "weights.json not found"}), 404
 
 
+
+
 # DEGREE
 # This endpoint will serve the degree of the individual nodes/entities.
 # A degree is a measure of well-connected a node is in a graph.
@@ -192,6 +206,8 @@ def degree_Node():
         return send_file(degreesJSON, mimetype= "application/json")
 
     return jsonify({"error": "degrees.json not found"}), 404
+
+
 
 
 # NETWORK
@@ -231,6 +247,8 @@ def download_graph():
     return send_file(os.path.join(BASE_DIR, "network.html"), mimetype = "text/html")
 
 
+
+
 # SUMMARY
 # This endpoint will request summary flask app.
 # It will return a summary json
@@ -239,10 +257,13 @@ def getSummary():
     request_data= request.get_json()
     name= request_data.get("name")
     if not name:
+        logging.error("Missing a name in the request.")
         return jsonify({"error": "Missing a name in request."}), 400
 
+    logging.info(f"Getting the sentences with the name {name}")
     json_path = os.path.join(BASE_DIR, "sentence_entities.json")
     if not os.path.exists(json_path):
+        logging.error(f"The sentence_entities.json does not exist.")
         return jsonify({"error": "Sentences json doesnt exist."}), 404
 
     with open(json_path, 'r') as file:
@@ -251,15 +272,31 @@ def getSummary():
     sentences= [entry["sentence"] for entry in data if any(name.lower() in n.lower() for n in entry["characters"])]
 
     if not sentences:
+        logging.error(f"No sentences found for the name '{name}'")
         return jsonify({"error": f"No sentences found for name '{name}'"}), 404
 
-    files = {'file': ('summary.json', json.dumps(sentences), 'application/json')}
+    text = " ".join(sentences)
     try:
-        response = requests.post("http://host.docker.internal:5000/summarize", files=files)
-        return jsonify(response.json()), response.status_code
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=f"""
+            Give the description of the characters.
+            Only stick to the text. 
+            Text: {text}
+            """
+        )
+        return jsonify({
+            "summary": response.text
+            })
     except Exception as e:
-        logging.error(f"Failed to connect to summary service: {e}")
-        return jsonify({"error": "Failed to summarize text."}), 500
+        logging.error(f"Gemini error: {str(e)}")
+        return jsonify({
+            "error": "Failed to generate summary",
+            "details": str(e)
+        }), 500
+
+
+
 
 # One of the most important code block.
 # It seves to debug and also run specific commands.
